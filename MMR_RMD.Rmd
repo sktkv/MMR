@@ -1,0 +1,224 @@
+---
+title: "Understanding Factors Affecting States' Maternal Mortality Ratio"
+author: "Niharika Suri & Sookthi Kav"
+date: "2023-11-25"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+#### Introduction
+
+This is a course project for DT308: Quantitative Data Analysis for Public Policy, with Prof. V Sridhar and Prof. Amit Prakash. Niharika and I have used the following publicly available data sets to analyse possible factors that affect Indian states' maternal morality rates:
+
+-   National Family Health Survey - 4 - 2014-15
+
+-   National Family Health Survey - 5 - 2019-20
+
+-   Sample Registration System (SRS) Special Bulletin on Maternal Mortality - 2014-15
+
+-   Sample Registration System (SRS) Special Bulletin on Maternal Mortality - 2018-20
+
+#### Load libraries and read data
+
+```{r load libraries, message = FALSE, warning = FALSE}
+library(car)
+library(readxl)
+library(ggplot2)
+library(GGally)
+library(readxl)
+library(car)
+library(stats)
+library(corrplot)
+library(dplyr)
+nfhs <- read_excel("FINAL.xlsx")
+my_data <- read_excel("FINAL.xlsx")
+```
+
+#### Specify variables
+
+**Dependent variable:** Maternal Mortality Rate out of 1000 of each Indian state
+
+**Independent variables:** In conduction a multiple-regression analysis, we started with all the variables available in the NFHS data sets and removed the variables with the highest p-values one-by-one, while ensuring that the adjusted R-squared value increased with each iteration, to narrow down on the following four statistically significant variables:
+
+-   households_water: Households with an improved drinking-water source (%)
+
+-   maternity_antenatal_four: Mothers who had at least 4 antenatal care visits (%)
+
+-   maternity_csec: Births delivered by caesarean section (%)
+
+-   maternity_registration: Registered pregnancies for which the mother received Mother and Child Protection (MCP) card (%)
+
+The following section shows all the variables available under `vif_variables`. The `#` are used before each variable to remove it from analysis.
+
+```{r specify variables}
+vif_variables <- c(
+  'households_water',
+  #'households_sanitation',
+  #'households_iodized',
+  #'households_healthinsurance',
+  #'women_literate',
+  #'men_literate',
+  #'women_below19_mothers',
+  #'infant_mortality',
+  #'familyplanning_modern',
+  #'maternity_antenatal_firsttrim',
+  'maternity_antenatal_four',
+  #'maternity_ironfolic',
+  'maternity_registration',
+  #'maternity_postnatal',
+  #'maternity_hospital',
+  'maternity_csec'
+  #'women_lowbmi',
+  #'women_nonpreg_anaemic',
+  #'women_pregnant_anaemic'
+  #'women_sugar_high'
+  #'women_bp_high'
+  #'women_decisions'
+  #'women_ever_spousalviolence'
+  #'women_pregnant_violence'
+  #'women_bank'
+  #'women_mobile'
+)
+```
+
+#### Tidy
+
+This section cleans the variables selected from the data sets and omits sections with missing values.
+
+```{r message = FALSE, warning = FALSE}
+# Convert selected variables to numeric
+my_data[, c('MMR', vif_variables)] <- lapply(my_data[, c('MMR', vif_variables)], as.numeric)
+
+# Handle missing values
+my_data <- na.omit(my_data[, c('MMR', vif_variables)])
+
+```
+
+#### ANOVA
+
+An analysis of variance was conducted to check for variance across states. The Pr (\>F) value at 0.007, less than 0.05, indicates that there is significant state-wise difference in MMR.
+
+| Dataset | Highest MMR | State | Lowest MMR | State  |
+|---------|-------------|-------|------------|--------|
+| NFHS-4  | 237         | Assam | 46         | Kerala |
+| NFHS-5  | 196         | Assam | 19         | Kerala |
+
+: Highest and Lowest MMR Values, NFHS-4 and NFHS-5
+
+```{r}
+
+statesmmr_aov <- aov(MMR~states, data = nfhs)
+summary(statesmmr_aov)
+```
+
+#### Linear Model & VIF
+
+We used a multiple linear regression model on our variables.
+
+```{r}
+
+# Construct the formula for the linear model
+formula_str <- paste("MMR ~", paste(vif_variables, collapse = " + "))
+formula <- as.formula(formula_str)
+
+#Linear model 
+lm_model <- lm(formula, data = my_data)
+
+
+# Fit a linear model to calculate VIF
+lm_model <- lm(formula, data = my_data)
+summary(lm_model)
+
+
+```
+
+Findings:
+
+-   3 variables had a statistically significant impact on MMR, with p\<0.05
+
+-   households_water has mildly significant impact, at p = 0.56
+
+-   Adjusted R-squared is 0.6, implying that 60% of MMR variation in the dataset can be explained by this model.
+
+#### Find Variance Inflation Factor
+
+```{r}
+
+# Calculate VIF
+vif_values <- car::vif(lm_model)
+
+# Display the VIF results
+vif_data <- data.frame(Variable = names(vif_values), VIF = vif_values)
+print(vif_data)
+```
+
+None of the variables have a Variance Inflation Factor \> 5. Hence, no significant multicollinearity.
+
+#### Model Diagnostics: Heteroscedasticity
+
+```{r}
+ggplot(data = lm_model, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Fitted Values vs. Residuals")+
+  xlab("Fitted values") +
+  ylab("Residuals")
+
+qplot(lm_model$residuals,
+               geom = "histogram",
+               bins = 10) +
+         labs(title = "Histogram of residuals",
+              x = "residual")
+```
+
+```{r}
+
+ggplot(data = lm_model, aes(sample = .resid)) +
+  stat_qq()+
+  labs(title = "Normal Probability Plot of Residuals")
+```
+
+Residuals plot is randomly distributed, the histogram plot somewhat normally distributed, as indicated by the normal probability plot as well, implying that residuals do not have constant variance and the model is statistically sound.
+
+#### Inferences
+
+-   States with higher % of mothers who had at least 4 antenatal care visits likely to have a **lower MMR.**
+
+    -   Slope of -1.65 and a p-value of 0.0009, indicating significance
+
+-   States with higher % of mothers who were registered with the MCP (Mother and Child Protection Cards) programme, likely to have **higher MMR.**
+
+    -   Slope of + 2.65 and a p-value of 0.02, indicating significance
+
+    -   Likely shows that registered states are counting higher MMR values, since more women are integrated into the system.
+
+-   States with higher % of mothers who had undergone a c-section likely to have **lower MMR.**
+
+    -   Slope of -1.52 and a p-value of 0.02, indicating significance
+
+-   States with higher % of households with an improved drinking-water source (%) may have a **lower MMR.**
+
+    -   Slope of - 1.82 and a p-value of 0.056, which is just higher than the significance level of 0.05, indicates non-significance.
+
+    -   However, literature shows that improved sanitation and water facilities help in decreasing MMR (Patel, 2014), which may not have reflected due to low sample size.
+
+#### Policy Implications
+
+-   Access to at least four antenatal care visits is crucial to reducing maternal mortality rates in Indian, as our model shows.
+
+-   Increasing reach of the MCP programme across states may help in keeping track of maternal mortality. More research can assist in verifying this.
+
+-   States having higher c-section rates show lower MMR. This aligns to literature on developing countries that indicate that increased c-section rates improve birth outcomes (Ye et al, 2016).
+
+    -   Possible inference: Better hospital facilities in unreached or remote areas may allow for emergency c-section deliveries during complications. However, it is difficult to say that increasing c-section rates will reduce MMR, in general, and it is likely to be tied to various other social and geographic factors as well.
+
+-   Improving water and sanitation facilities and increasing access to clean, drinking water is important, to avoid pregnancy related complications (Cheng et al., 2012), which shows up in our findings as well.
+
+#### References
+
+-   Cheng, J. J., Schuster-Wallace, C. J., Watt, S., Newbold, B. K., & Mente, A. (2012). An ecological quantification of the relationships between water, sanitation and infant, child, and maternal mortality. Environmental Health, 11(1), 4. <https://doi.org/10.1186/1476-069X-11-4>
+
+-   Velleman, Y., Mason, E., Graham, W., Benova, L., Chopra, M., Campbell, O. M. R., Gordon, B., Wijesekera, S., Hounton, S., Esteves Mills, J., Curtis, V., Afsana, K., Boisson, S., Magoma, M., Cairncross, S., & Cumming, O. (2014). From Joint Thinking to Joint Action: A Call to Action on Improving Water, Sanitation, and Hygiene for Maternal and Newborn Health. PLoS Medicine, 11(12), e1001771. <https://doi.org/10.1371/journal.pmed.1001771>
+
+-   Ye, J., Zhang, J., Mikolajczyk, R., Torloni, M., Gülmezoglu, A., & Betran, A. (2016). Association between rates of caesarean section and maternal and neonatal mortality in the 21st century: A worldwide population‐based ecological study with longitudinal data. BJOG: An International Journal of Obstetrics & Gynaecology, 123(5), 745--753. <https://doi.org/10.1111/1471-0528.13592>
